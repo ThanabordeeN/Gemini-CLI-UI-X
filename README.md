@@ -213,6 +213,45 @@ The UI automatically discovers Gemini CLI projects from `~/.gemini/projects/` an
 - Session management with timeout functionality
 - SQL injection protection (prepared statements used)
 
+### Public Domain & HMR Configuration
+
+If you plan to run the development server under a public domain (e.g., via an Nginx reverse proxy) and want to keep the Hot Module Replacement (HMR) functionality working, you may need to adjust your `vite.config.js`.
+
+#### 1. HMR Configuration
+When accessing via HTTPS/WSS, Vite's default WebSocket connection might fail. You can force an encrypted connection with the following configuration:
+
+```javascript
+// vite.config.js
+server: {
+  hmr: {
+    host: 'your-domain.com', // Replace with your actual domain
+    protocol: 'wss',         // Force encrypted WebSocket
+    clientPort: 443          // Port accessed by the browser (Default for HTTPS is 443)
+  }
+}
+```
+
+#### 2. Proxy and Host Headers
+To ensure API requests are correctly forwarded and to bypass browser security restrictions:
+
+- **changeOrigin**: Setting this to `true` modifies the `Host` header to match the target URL, resolving CORS/proxy issues with some backends.
+- **allowedHosts**: Explicitly allows your public domain to access the development server, preventing "Invalid Host header" errors.
+
+```javascript
+// vite.config.js example
+server: {
+  proxy: {
+    '/api': {
+      target: 'http://localhost:4008',
+      changeOrigin: true
+    }
+  },
+  allowedHosts: ["your-domain.com"] // Replace with your actual domain
+}
+```
+
+
+
 ## Troubleshooting
 
 ### Common Issues & Solutions
