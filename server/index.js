@@ -266,6 +266,40 @@ app.delete('/api/projects/:projectName', authenticateToken, async (req, res) => 
   }
 });
 
+// Browse directories endpoint for folder picker
+app.get('/api/browse-directories', authenticateToken, async (req, res) => {
+  try {
+    const requestedPath = req.query.path || os.homedir();
+    const absolutePath = path.resolve(requestedPath);
+
+    let entries;
+    try {
+      entries = await fsPromises.readdir(absolutePath, { withFileTypes: true });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return res.status(404).json({ error: 'Directory not found' });
+      }
+      if (error.code === 'EACCES') {
+        return res.status(403).json({ error: 'Permission denied' });
+      }
+      throw error;
+    }
+
+    const directories = entries
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map(entry => entry.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    res.json({
+      current: absolutePath,
+      parent: path.dirname(absolutePath) !== absolutePath ? path.dirname(absolutePath) : null,
+      directories,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create project endpoint
 app.post('/api/projects/create', authenticateToken, async (req, res) => {
   try {
