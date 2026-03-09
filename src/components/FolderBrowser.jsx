@@ -40,7 +40,7 @@ export default function FolderBrowser({ onSelect, onCancel }) {
   }, [fetchDirectories]);
 
   const navigateTo = (dirName) => {
-    const newPath = currentPath + '/' + dirName;
+    const newPath = currentPath.endsWith('/') ? currentPath + dirName : currentPath + '/' + dirName;
     fetchDirectories(newPath);
   };
 
@@ -131,7 +131,8 @@ export default function FolderBrowser({ onSelect, onCancel }) {
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-accent text-left transition-colors"
                   onDoubleClick={() => navigateTo(dir)}
                   onClick={() => {
-                    setPathInput(currentPath + '/' + dir);
+                    const selected = currentPath.endsWith('/') ? currentPath + dir : currentPath + '/' + dir;
+                    setPathInput(selected);
                   }}
                 >
                   <Folder className="w-4 h-4 text-primary shrink-0" />
