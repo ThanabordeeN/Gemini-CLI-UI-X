@@ -63,6 +63,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
+  browseDirectories: (dirPath) =>
+    authenticatedFetch(`/api/browse-directories${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ''}`),
   readFile: (projectName, filePath) =>
     authenticatedFetch(`/api/projects/${projectName}/file?filePath=${encodeURIComponent(filePath)}`),
   saveFile: (projectName, filePath, content) =>

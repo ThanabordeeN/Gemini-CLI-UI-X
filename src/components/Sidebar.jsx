@@ -4,9 +4,10 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 
-import { FolderOpen, Folder, Plus, MessageSquare, Clock, ChevronDown, ChevronRight, Edit3, Check, X, Trash2, Settings, FolderPlus, RefreshCw, Sparkles, Edit2, Star, Search } from 'lucide-react';
+import { FolderOpen, Folder, Plus, MessageSquare, Clock, ChevronDown, ChevronRight, Edit3, Check, X, Trash2, Settings, FolderPlus, RefreshCw, Sparkles, Edit2, Star, Search, FolderSearch } from 'lucide-react';
 import { cn } from '../lib/utils';
 import GeminiLogo from './GeminiLogo';
+import FolderBrowser from './FolderBrowser';
 import { api } from '../utils/api';
 
 // Move formatTimeAgo outside component to avoid recreation on every render
@@ -58,6 +59,7 @@ function Sidebar({
   const [editingName, setEditingName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
   const [creatingProject, setCreatingProject] = useState(false);
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState({});
   const [additionalSessions, setAdditionalSessions] = useState({});
   const [initialSessionsLoaded, setInitialSessionsLoaded] = useState(new Set());
@@ -502,17 +504,28 @@ function Sidebar({
               Create New Project
             </div>
             <div className="space-y-2">
-              <Input
-                value={newProjectPath}
-                onChange={(e) => setNewProjectPath(e.target.value)}
-                placeholder="/path/to/project or new/folder/name"
-                className="text-sm focus:ring-2 focus:ring-primary/20"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') createNewProject();
-                  if (e.key === 'Escape') cancelNewProject();
-                }}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={newProjectPath}
+                  onChange={(e) => setNewProjectPath(e.target.value)}
+                  placeholder="/path/to/project or new/folder/name"
+                  className="text-sm focus:ring-2 focus:ring-primary/20 flex-1"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createNewProject();
+                    if (e.key === 'Escape') cancelNewProject();
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 px-2 shrink-0"
+                  onClick={() => setShowFolderBrowser(true)}
+                  title="Browse folders"
+                >
+                  <FolderSearch className="w-4 h-4" />
+                </Button>
+              </div>
               {newProjectPath.trim() && (
                 <div className="text-xs text-muted-foreground italic">
                   💡 Folder will be created if it doesn't exist
@@ -563,17 +576,28 @@ function Sidebar({
               
               <div className="space-y-3">
                 <div>
-                  <Input
-                    value={newProjectPath}
-                    onChange={(e) => setNewProjectPath(e.target.value)}
-                    placeholder="/path/to/project or new/folder/name"
-                    className="text-sm h-10 rounded-md focus:border-primary transition-colors"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') createNewProject();
-                      if (e.key === 'Escape') cancelNewProject();
-                    }}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={newProjectPath}
+                      onChange={(e) => setNewProjectPath(e.target.value)}
+                      placeholder="/path/to/project or new/folder/name"
+                      className="text-sm h-10 rounded-md focus:border-primary transition-colors flex-1"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') createNewProject();
+                        if (e.key === 'Escape') cancelNewProject();
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 px-3 shrink-0"
+                      onClick={() => setShowFolderBrowser(true)}
+                      title="Browse folders"
+                    >
+                      <FolderSearch className="w-4 h-4" />
+                    </Button>
+                  </div>
                   {newProjectPath.trim() && (
                     <div className="text-xs text-muted-foreground italic mt-2">
                       💡 Folder will be created if it doesn't exist
@@ -605,6 +629,17 @@ function Sidebar({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Folder Browser Modal */}
+      {showFolderBrowser && (
+        <FolderBrowser
+          onSelect={(selectedPath) => {
+            setNewProjectPath(selectedPath);
+            setShowFolderBrowser(false);
+          }}
+          onCancel={() => setShowFolderBrowser(false)}
+        />
       )}
       
       {/* Search Filter */}
