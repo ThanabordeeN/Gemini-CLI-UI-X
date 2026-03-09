@@ -50,7 +50,17 @@ async function generateDisplayName(projectName, actualProjectDir = null) {
     // Fall back to path-based naming if package.json doesn't exist or can't be read
   }
 
-  // If it starts with /, it's an absolute path
+  // Use the folder name (basename) as the display name
+  try {
+    const folderName = path.basename(projectPath);
+    if (folderName) {
+      return folderName;
+    }
+  } catch (e) {
+    // Fallback below
+  }
+
+  // If it starts with /, it's an absolute path (POSIX fallback)
   if (projectPath.startsWith('/')) {
     const parts = projectPath.split('/').filter(Boolean);
     if (parts.length > 3) {

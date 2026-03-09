@@ -25,6 +25,7 @@ import MainContent from './components/MainContent';
 import MobileNav from './components/MobileNav';
 import ToolsSettings from './components/ToolsSettings';
 import ErrorBoundary from './components/ErrorBoundary';
+import ManualProjectModal from './components/ManualProjectModal';
 
 import { useWebSocket } from './utils/websocket';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -51,6 +52,7 @@ function AppContent() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [showToolsSettings, setShowToolsSettings] = useState(false);
+  const [showManualProject, setShowManualProject] = useState(false);
   const [showQuickSettings, setShowQuickSettings] = useState(false);
   const [filesPanelWidth, setFilesPanelWidth] = useState(320); // Default width 320px
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -573,6 +575,7 @@ function AppContent() {
                   latestVersion={latestVersion}
                   currentVersion={currentVersion}
                   onShowVersionModal={() => setShowVersionModal(true)}
+                  onAddProject={() => setShowManualProject(true)}
                 />
               </div>
 
@@ -645,6 +648,7 @@ function AppContent() {
               latestVersion={latestVersion}
               currentVersion={currentVersion}
               onShowVersionModal={() => setShowVersionModal(true)}
+              onAddProject={() => setShowManualProject(true)}
             />
           </div>
         </div>
@@ -669,6 +673,7 @@ function AppContent() {
           onReplaceTemporarySession={replaceTemporarySession}
           onNavigateToSession={(sessionId) => navigate(`/session/${sessionId}`)}
           onShowSettings={() => setShowToolsSettings(true)}
+          onAddProject={() => setShowManualProject(true)}
           autoExpandTools={autoExpandTools}
           showRawParameters={showRawParameters}
           autoScrollToBottom={autoScrollToBottom}
@@ -734,6 +739,16 @@ function AppContent() {
 
       {/* Version Upgrade Modal */}
       <VersionUpgradeModal />
+
+      {/* Manual Project Modal */}
+      <ManualProjectModal
+        isOpen={showManualProject}
+        onClose={() => setShowManualProject(false)}
+        onProjectAdded={(project) => {
+          handleProjectSelect(project);
+          setShowManualProject(false);
+        }}
+      />
     </div>
   );
 }

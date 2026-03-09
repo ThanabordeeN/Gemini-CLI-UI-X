@@ -28,10 +28,13 @@ import { api } from '../utils/api';
 import { playNotificationSound } from '../utils/notificationSound';
 
 // Memoized message component to prevent unnecessary re-renders
-const MessageComponent = memo(({ message, index, prevMessage, mcpContext, createDiff, onFileOpen, onShowSettings, autoExpandTools, showRawParameters }) => {
+const MessageComponent = memo(({ message, index, prevMessage, nextMessage, mcpContext, createDiff, onFileOpen, onShowSettings, autoExpandTools, showRawParameters }) => {
   const isGrouped = prevMessage && prevMessage.type === message.type &&
     prevMessage.type === 'assistant' &&
     !prevMessage.isToolUse && !message.isToolUse;
+  const followedBySame = nextMessage && nextMessage.type === message.type &&
+    nextMessage.type === 'assistant' &&
+    !nextMessage.isToolUse && !message.isToolUse;
   const messageRef = React.useRef(null);
   const [isExpanded, setIsExpanded] = React.useState(false);
   React.useEffect(() => {
@@ -949,9 +952,11 @@ const MessageComponent = memo(({ message, index, prevMessage, mcpContext, create
               </div>
             )}
 
-            <div className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${isGrouped ? 'opacity-0 group-hover:opacity-100' : ''}`}>
-              {new Date(message.timestamp).toLocaleTimeString()}
-            </div>
+            {!followedBySame && (
+              <div className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${isGrouped ? 'opacity-0 group-hover:opacity-100' : ''}`}>
+                {new Date(message.timestamp).toLocaleTimeString()}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2218,7 +2223,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
         {/* Messages Area - Scrollable Middle Section */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden px-0 py-3 sm:p-4 space-y-3 sm:space-y-4 relative"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-12 py-3 sm:py-4 space-y-3 sm:space-y-4 relative"
           style={{
             scrollBehavior: 'smooth',
             // Force GPU acceleration for smoother scrolling
@@ -2244,75 +2249,79 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
             </div>
           ) : (
             <>
-              {chatMessages.length > visibleMessageCount && (
-                <div className="text-center text-gray-500 dark:text-gray-400 text-sm py-2 border-b border-gray-200 dark:border-gray-700">
-                  Showing last {visibleMessageCount} messages ({chatMessages.length} total) •
-                  <button
-                    className="ml-1 text-blue-600 hover:text-blue-700 underline"
-                    onClick={loadEarlierMessages}
-                  >
-                    Load earlier messages
-                  </button>
-                </div>
-              )}
+              <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 pt-2">
+                {chatMessages.length > visibleMessageCount && (
+                  <div className="text-center text-gray-500 dark:text-gray-400 text-sm py-2 border-b border-gray-200 dark:border-gray-700">
+                    Showing last {visibleMessageCount} messages ({chatMessages.length} total) •
+                    <button
+                      className="ml-1 text-blue-600 hover:text-blue-700 underline"
+                      onClick={loadEarlierMessages}
+                    >
+                      Load earlier messages
+                    </button>
+                  </div>
+                )}
 
-              {visibleMessages.map((message, index) => {
-                const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
-                const nextMessage = index < visibleMessages.length - 1 ? visibleMessages[index + 1] : null;
+                {visibleMessages.map((message, index) => {
+                  const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
+                  const nextMessage = index < visibleMessages.length - 1 ? visibleMessages[index + 1] : null;
 
-                // Filter out the "MCP issues detected" standalone message if it's immediately followed by an error
-                if (message.type === 'assistant' &&
-                  message.content &&
-                  message.content.includes('MCP issues detected.') &&
-                  nextMessage &&
-                  nextMessage.type === 'error') {
-                  return null;
-                }
+                  // Filter out the "MCP issues detected" standalone message if it's immediately followed by an error
+                  if (message.type === 'assistant' &&
+                    message.content &&
+                    message.content.includes('MCP issues detected.') &&
+                    nextMessage &&
+                    nextMessage.type === 'error') {
+                    return null;
+                  }
 
-                // If this is an error and the previous message was the "MCP issues" context, pass it down
-                let mcpContext = '';
-                if (message.type === 'error' &&
-                  prevMessage &&
-                  prevMessage.type === 'assistant' &&
-                  prevMessage.content &&
-                  prevMessage.content.includes('MCP issues detected.')) {
-                  mcpContext = ' : ' + prevMessage.content.trim();
-                }
+                  // If this is an error and the previous message was the "MCP issues" context, pass it down
+                  let mcpContext = '';
+                  if (message.type === 'error' &&
+                    prevMessage &&
+                    prevMessage.type === 'assistant' &&
+                    prevMessage.content &&
+                    prevMessage.content.includes('MCP issues detected.')) {
+                    mcpContext = ' : ' + prevMessage.content.trim();
+                  }
 
-                return (
-                  <MessageComponent
-                    key={`${message.id || index}-${message.timestamp}`}
-                    message={message}
-                    index={index}
-                    prevMessage={prevMessage}
-                    mcpContext={mcpContext}
-                    createDiff={createDiff}
-                    onFileOpen={onFileOpen}
-                    onShowSettings={onShowSettings}
-                    autoExpandTools={autoExpandTools}
-                    showRawParameters={showRawParameters}
-                  />
-                );
-              })}
+                  return (
+                    <MessageComponent
+                      key={`${message.id || index}-${message.timestamp}`}
+                      message={message}
+                      index={index}
+                      prevMessage={prevMessage}
+                      nextMessage={nextMessage}
+                      mcpContext={mcpContext}
+                      createDiff={createDiff}
+                      onFileOpen={onFileOpen}
+                      onShowSettings={onShowSettings}
+                      autoExpandTools={autoExpandTools}
+                      showRawParameters={showRawParameters}
+                    />
+                  );
+                })}
+              </div>
             </>
           )}
 
           {isLoading && (
-            <div className="chat-message assistant">
-              <div className="w-full">
-                <div className="flex items-center space-x-3 mb-2">
-                  <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-white text-sm flex-shrink-0">
-                    G
+            <div className="max-w-4xl mx-auto">
+              <div className="chat-message assistant px-3 sm:px-0">
+                <div className="w-full">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-white text-sm flex-shrink-0">
+                      G
+                    </div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">Gemini</div>
                   </div>
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">Gemini</div>
-                  {/* Abort button removed - functionality not yet implemented at backend */}
-                </div>
-                <div className="w-full text-sm text-gray-500 dark:text-gray-400 pl-3 sm:pl-0">
-                  <div className="flex items-center space-x-1">
-                    <div className="animate-pulse">●</div>
-                    <div className="animate-pulse" style={{ animationDelay: '0.2s' }}>●</div>
-                    <div className="animate-pulse" style={{ animationDelay: '0.4s' }}>●</div>
-                    <span className="ml-2">Thinking...</span>
+                  <div className="w-full text-sm text-gray-500 dark:text-gray-400 pl-3 sm:pl-0">
+                    <div className="flex items-center space-x-1">
+                      <div className="animate-pulse">●</div>
+                      <div className="animate-pulse" style={{ animationDelay: '0.2s' }}>●</div>
+                      <div className="animate-pulse" style={{ animationDelay: '0.4s' }}>●</div>
+                      <span className="ml-2 italic text-xs">Thinking...</span>
+                    </div>
                   </div>
                 </div>
               </div>

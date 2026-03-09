@@ -300,38 +300,63 @@ app.get('/api/browse-directories', authenticateToken, async (req, res) => {
   }
 });
 
-// Native folder picker endpoint (Windows only)
 app.get('/api/pick-directory', authenticateToken, async (req, res) => {
-  if (process.platform !== 'win32') {
-    return res.status(400).json({ error: 'Native folder picker is only supported on Windows' });
+  const isWindows = process.platform === 'win32';
+  const isLinux = process.platform === 'linux';
+
+  if (!isWindows && !isLinux) {
+    return res.status(400).json({ error: 'Native folder picker is only supported on Windows and Linux' });
   }
 
   try {
-    // PowerShell command to open folder browser dialog
-    // We use Shell.Application for a more modern-looking dialog than the basic FolderBrowserDialog
-    const psCommand = `
-      $shell = New-Object -ComObject Shell.Application;
-      $folder = $shell.BrowseForFolder(0, 'Select Project Folder', 0, 0);
-      if ($folder) {
-        Write-Host $folder.Self.Path
-      }
-    `.replace(/\n/g, ' ').trim();
-
     const { exec } = await import('child_process');
-    exec(`powershell.exe -Command "${psCommand}"`, (error, stdout, stderr) => {
-      if (error) {
-        console.error('PowerShell Error:', error);
-        return res.status(500).json({ error: 'Failed to open folder picker' });
-      }
 
-      const selectedPath = stdout.trim();
-      if (!selectedPath) {
-        // User cancelled
-        return res.json({ cancelled: true });
-      }
+    if (isWindows) {
+      // PowerShell command to open folder browser dialog
+      const psCommand = `
+        $shell = New-Object -ComObject Shell.Application;
+        $folder = $shell.BrowseForFolder(0, 'Select Project Folder', 0x10 + 0x40, 0);
+        if ($folder) {
+          Write-Host $folder.Self.Path
+        }
+      `.replace(/\n/g, ' ').trim();
 
-      res.json({ path: selectedPath });
-    });
+      exec(`powershell.exe -Command "${psCommand}"`, (error, stdout, stderr) => {
+        if (error) {
+          console.error('PowerShell Error:', error);
+          return res.status(500).json({ error: 'Failed to open folder picker' });
+        }
+
+        const selectedPath = stdout.trim();
+        if (!selectedPath) return res.json({ cancelled: true });
+        res.json({ path: selectedPath });
+      });
+    } else if (isLinux) {
+      // Try zenity first, then kdialog
+      const linuxCmd = `
+        if command -v zenity >/dev/null 2>&1; then
+          zenity --file-selection --directory --title="Select Project Folder"
+        elif command -v kdialog >/dev/null 2>&1; then
+          kdialog --getexistingdirectory . --title "Select Project Folder"
+        else
+          echo "ERR_NO_TOOL"
+        fi
+      `.replace(/\n/g, ' ').trim();
+
+      exec(linuxCmd, (error, stdout, stderr) => {
+        const selectedPath = stdout.trim();
+
+        if (selectedPath === "ERR_NO_TOOL") {
+          return res.status(500).json({ error: 'No folder picker tool found (zenity or kdialog required)' });
+        }
+
+        if (error || !selectedPath) {
+          return res.json({ cancelled: true });
+        }
+
+        res.json({ path: selectedPath });
+      });
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1156,7 +1181,21 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
 
 // Serve React app for all other routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
+  const indexPath = path.join(__dirname, '../dist/index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send(`
+      <div style="font-family: sans-serif; padding: 20px; line-height: 1.6;">
+        <h1 style="color: #d32f2f;">Frontend Not Built</h1>
+        <p>The frontend "dist" directory is missing or index.html was not found.</p>
+        <p>To fix this, please run:</p>
+        <pre style="background: #f4f4f4; padding: 10px; border-radius: 4px;">npm run build</pre>
+        <p>Or use development mode:</p>
+        <pre style="background: #f4f4f4; padding: 10px; border-radius: 4px;">npm run dev</pre>
+      </div>
+    `);
+  }
 });
 
 // Helper function to convert permissions to rwx format

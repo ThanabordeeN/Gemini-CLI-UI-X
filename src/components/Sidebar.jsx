@@ -50,14 +50,12 @@ function Sidebar({
   updateAvailable,
   latestVersion,
   currentVersion,
-  onShowVersionModal
+  onShowVersionModal,
+  onAddProject
 }) {
   const [expandedProjects, setExpandedProjects] = useState(new Set());
   const [editingProject, setEditingProject] = useState(null);
-  const [showNewProject, setShowNewProject] = useState(false);
   const [editingName, setEditingName] = useState('');
-  const [newProjectPath, setNewProjectPath] = useState('');
-  const [creatingProject, setCreatingProject] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState({});
   const [additionalSessions, setAdditionalSessions] = useState({});
   const [initialSessionsLoaded, setInitialSessionsLoaded] = useState(new Set());
@@ -323,43 +321,8 @@ function Sidebar({
     }
   };
 
-  const createNewProject = async () => {
-    if (!newProjectPath.trim()) {
-      alert('Please enter a project path');
-      return;
-    }
-
-    setCreatingProject(true);
-
-    try {
-      const response = await api.createProject(newProjectPath.trim());
-
-      if (response.ok) {
-        const result = await response.json();
-        setShowNewProject(false);
-        setNewProjectPath('');
-
-        // Refresh projects to show the new one
-        if (window.refreshProjects) {
-          window.refreshProjects();
-        } else {
-          window.location.reload();
-        }
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to create project. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error creating project:', error);
-      alert('Error creating project. Please try again.');
-    } finally {
-      setCreatingProject(false);
-    }
-  };
-
   const cancelNewProject = () => {
-    setShowNewProject(false);
-    setNewProjectPath('');
+    // Show manual project modal instead? No, this is triggered from parent now
   };
 
   const loadMoreSessions = async (project) => {
@@ -446,8 +409,8 @@ function Sidebar({
               variant="default"
               size="sm"
               className="h-9 w-9 px-0 bg-primary hover:bg-primary/90 transition-all duration-200 shadow-sm hover:shadow-md"
-              onClick={() => setShowNewProject(true)}
-              title="Create new project (Ctrl+N)"
+              onClick={onAddProject}
+              title="Add project (Ctrl+N)"
             >
               <FolderPlus className="w-4 h-4" />
             </Button>
@@ -483,7 +446,7 @@ function Sidebar({
               </button>
               <button
                 className="w-8 h-8 rounded-md bg-primary text-primary-foreground flex items-center justify-center active:scale-95 transition-all duration-150"
-                onClick={() => setShowNewProject(true)}
+                onClick={onAddProject}
               >
                 <FolderPlus className="w-4 h-4" />
               </button>
@@ -491,167 +454,6 @@ function Sidebar({
           </div>
         </div>
       </div>
-
-      {/* New Project Form */}
-      {showNewProject && (
-        <div className="md:p-3 md:border-b md:border-border md:bg-muted/30">
-          {/* Desktop Form */}
-          <div className="hidden md:block space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <FolderPlus className="w-4 h-4" />
-              Create New Project
-            </div>
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  value={newProjectPath}
-                  onChange={(e) => setNewProjectPath(e.target.value)}
-                  placeholder="/path/to/project or new/folder/name"
-                  className="text-sm focus:ring-2 focus:ring-primary/20 flex-1"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') createNewProject();
-                    if (e.key === 'Escape') cancelNewProject();
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-2 shrink-0"
-                  onClick={async () => {
-                    try {
-                      const response = await api.pickDirectory();
-                      if (response.ok) {
-                        const result = await response.json();
-                        if (result.path) {
-                          setNewProjectPath(result.path);
-                        }
-                      }
-                    } catch (error) {
-                      console.error('Error picking directory:', error);
-                    }
-                  }}
-                  title="Browse folders"
-                >
-                  <FolderSearch className="w-4 h-4" />
-                </Button>
-              </div>
-              {newProjectPath.trim() && (
-                <div className="text-xs text-muted-foreground italic">
-                  💡 Folder will be created if it doesn't exist
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={createNewProject}
-                disabled={!newProjectPath.trim() || creatingProject}
-                className="flex-1 h-8 text-xs hover:bg-primary/90 transition-colors"
-              >
-                {creatingProject ? 'Creating...' : 'Create Project'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={cancelNewProject}
-                disabled={creatingProject}
-                className="h-8 text-xs hover:bg-accent transition-colors"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-
-          {/* Mobile Form - Simple Overlay */}
-          <div className="md:hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
-            <div className="absolute bottom-0 left-0 right-0 bg-card rounded-t-lg border-t border-border p-4 space-y-4 animate-in slide-in-from-bottom duration-300">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-primary/10 rounded-md flex items-center justify-center">
-                    <FolderPlus className="w-3 h-3 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-foreground">New Project</h2>
-                  </div>
-                </div>
-                <button
-                  onClick={cancelNewProject}
-                  disabled={creatingProject}
-                  className="w-6 h-6 rounded-md bg-muted flex items-center justify-center active:scale-95 transition-transform"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <div className="flex gap-2">
-                    <Input
-                      value={newProjectPath}
-                      onChange={(e) => setNewProjectPath(e.target.value)}
-                      placeholder="/path/to/project or new/folder/name"
-                      className="text-sm h-10 rounded-md focus:border-primary transition-colors flex-1"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') createNewProject();
-                        if (e.key === 'Escape') cancelNewProject();
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-10 px-3 shrink-0"
-                      onClick={async () => {
-                        try {
-                          const response = await api.pickDirectory();
-                          if (response.ok) {
-                            const result = await response.json();
-                            if (result.path) {
-                              setNewProjectPath(result.path);
-                            }
-                          }
-                        } catch (error) {
-                          console.error('Error picking directory:', error);
-                        }
-                      }}
-                      title="Browse folders"
-                    >
-                      <FolderSearch className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  {newProjectPath.trim() && (
-                    <div className="text-xs text-muted-foreground italic mt-2">
-                      💡 Folder will be created if it doesn't exist
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={cancelNewProject}
-                    disabled={creatingProject}
-                    variant="outline"
-                    className="flex-1 h-9 text-sm rounded-md active:scale-95 transition-transform"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={createNewProject}
-                    disabled={!newProjectPath.trim() || creatingProject}
-                    className="flex-1 h-9 text-sm rounded-md bg-primary hover:bg-primary/90 active:scale-95 transition-all"
-                  >
-                    {creatingProject ? 'Creating...' : 'Create'}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Safe area for mobile */}
-              <div className="h-4" />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Search Filter */}
       {projects.length > 0 && !isLoading && (

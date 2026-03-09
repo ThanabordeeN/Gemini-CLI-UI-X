@@ -1,8 +1,10 @@
 import React from 'react';
 
-const GeminiLogo = ({className = 'w-5 h-5'}) => {
+const GeminiLogo = ({ className = 'w-5 h-5' }) => {
   return (
-    <img src="/icons/gemini-ai-icon.svg" alt="Gemini" className={className} />
+    <div className={`${className} flex items-center justify-center font-bold text-black`}>
+      G
+    </div>
   );
 };
 
