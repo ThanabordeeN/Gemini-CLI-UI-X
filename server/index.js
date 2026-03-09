@@ -36,7 +36,7 @@ import pty from '@homebridge/node-pty-prebuilt-multiarch';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
-import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
+import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, cleanupInvalidProjects } from './projects.js';
 import { spawnGemini, abortGeminiSession } from './gemini-cli.js';
 import sessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
@@ -317,6 +317,31 @@ app.post('/api/projects/create', authenticateToken, async (req, res) => {
   }
 });
 
+// Cleanup invalid projects endpoint
+app.post('/api/projects/cleanup', authenticateToken, async (req, res) => {
+  try {
+    console.log('🧹 Manual cleanup triggered...');
+    const result = await cleanupInvalidProjects();
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Removed ${result.cleanedCount} invalid project(s)`,
+        cleanedCount: result.cleanedCount
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        cleanedCount: result.cleanedCount
+      });
+    }
+  } catch (error) {
+    console.error('Error during project cleanup:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Read file content endpoint
 app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) => {
   try {
@@ -434,6 +459,120 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
       res.status(404).json({ error: 'File or directory not found' });
     } else if (error.code === 'EACCES') {
       res.status(403).json({ error: 'Permission denied' });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Create File endpoint
+app.post('/api/projects/:projectName/files/create', authenticateToken, async (req, res) => {
+  try {
+    const { projectName } = req.params;
+    const { filePath, content = '' } = req.body;
+
+    if (!filePath || !path.isAbsolute(filePath)) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+
+    // Check if file already exists
+    try {
+      await fsPromises.access(filePath);
+      return res.status(400).json({ error: 'File already exists' });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+
+    // Write the new content
+    await fsPromises.writeFile(filePath, content, 'utf8');
+
+    res.json({
+      success: true,
+      path: filePath,
+      message: 'File created successfully'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create Folder endpoint
+app.post('/api/projects/:projectName/folders/create', authenticateToken, async (req, res) => {
+  try {
+    const { projectName } = req.params;
+    const { folderPath } = req.body;
+
+    if (!folderPath || !path.isAbsolute(folderPath)) {
+      return res.status(400).json({ error: 'Invalid folder path' });
+    }
+
+    // Check if folder already exists
+    try {
+      await fsPromises.access(folderPath);
+      return res.status(400).json({ error: 'Folder already exists' });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+
+    // Create directory
+    await fsPromises.mkdir(folderPath, { recursive: true });
+
+    res.json({
+      success: true,
+      path: folderPath,
+      message: 'Folder created successfully'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete File endpoint
+app.delete('/api/projects/:projectName/files', authenticateToken, async (req, res) => {
+  try {
+    const { projectName } = req.params;
+    const { filePath } = req.body;
+
+    if (!filePath || !path.isAbsolute(filePath)) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+
+    await fsPromises.unlink(filePath);
+
+    res.json({
+      success: true,
+      path: filePath,
+      message: 'File deleted successfully'
+    });
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      res.status(404).json({ error: 'File not found' });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Delete Folder endpoint
+app.delete('/api/projects/:projectName/folders', authenticateToken, async (req, res) => {
+  try {
+    const { projectName } = req.params;
+    const { folderPath } = req.body;
+
+    if (!folderPath || !path.isAbsolute(folderPath)) {
+      return res.status(400).json({ error: 'Invalid folder path' });
+    }
+
+    await fsPromises.rm(folderPath, { recursive: true, force: true });
+
+    res.json({
+      success: true,
+      path: folderPath,
+      message: 'Folder deleted successfully'
+    });
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      res.status(404).json({ error: 'Folder not found' });
     } else {
       res.status(500).json({ error: error.message });
     }
@@ -582,27 +721,36 @@ function handleShellConnection(ws) {
           }
 
           // Build shell command that changes to project directory first, then runs gemini
-          let geminiCommand = geminiPath;
+          let geminiCommand;
+
+          // Clean path - remove non-printable chars and normalize slashes for Windows
+          const cleanProjectPath = isWindows
+            ? projectPath.replace(/[^\x20-\x7E]/g, '').trim().replace(/\//g, '\\')
+            : projectPath.replace(/[^\x20-\x7E]/g, '').trim();
 
           if (hasSession && sessionId) {
             if (isWindows) {
-              // Windows: cmd doesn't support || operator cleanly, use separate fallback
-              geminiCommand = `"${geminiPath}" --resume ${sessionId}`;
+              geminiCommand = `& '${geminiPath.replace(/'/g, "''")}' --resume ${sessionId}`;
             } else {
               geminiCommand = `"${geminiPath}" --resume ${sessionId} || "${geminiPath}"`;
             }
           } else {
-            geminiCommand = `"${geminiPath}"`;
+            if (isWindows) {
+              geminiCommand = `& '${geminiPath.replace(/'/g, "''")}'`;
+            } else {
+              geminiCommand = `"${geminiPath}"`;
+            }
           }
 
           // Create shell command appropriate for the OS
           let spawnCmd, spawnArgs;
           if (isWindows) {
-            const shellCommand = `cd /d "${projectPath}" && ${geminiCommand}`;
-            spawnCmd = 'cmd.exe';
-            spawnArgs = ['/d', '/s', '/c', shellCommand];
+            // Use PowerShell for better path handling and quoting on Windows
+            const psCommand = `Set-Location '${cleanProjectPath.replace(/'/g, "''")}'; ${geminiCommand}`;
+            spawnCmd = 'powershell.exe';
+            spawnArgs = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', psCommand];
           } else {
-            const shellCommand = `cd "${projectPath}" && ${geminiCommand}`;
+            const shellCommand = `cd "${cleanProjectPath}" && ${geminiCommand}`;
             spawnCmd = 'bash';
             spawnArgs = ['-c', shellCommand];
           }
@@ -705,8 +853,11 @@ function handleShellConnection(ws) {
       } else if (data.type === 'resize') {
         // Handle terminal resize
         if (shellProcess && shellProcess.resize) {
-          // console.log('Terminal resize requested:', data.cols, 'x', data.rows);
-          shellProcess.resize(data.cols, data.rows);
+          try {
+            shellProcess.resize(data.cols, data.rows);
+          } catch (resizeError) {
+            // Ignore resize errors - process may have already exited (ConPTY error on Windows)
+          }
         }
       }
     } catch (error) {
@@ -1061,6 +1212,17 @@ async function startServer() {
     await initializeDatabase();
     // console.log('✅ Database initialization skipped (testing)');
 
+    // Clean up invalid projects on startup
+    console.log('🧹 Cleaning up invalid Gemini projects...');
+    const cleanupResult = await cleanupInvalidProjects();
+    if (cleanupResult.success && cleanupResult.cleanedCount > 0) {
+      console.log(`✅ Removed ${cleanupResult.cleanedCount} invalid project(s)`);
+    } else if (cleanupResult.success) {
+      console.log('✅ No invalid projects found');
+    } else {
+      console.warn('⚠️ Project cleanup encountered errors:', cleanupResult.error);
+    }
+
     server.listen(PORT, '0.0.0.0', async () => {
       // console.log(`Gemini CLI UI server running on http://0.0.0.0:${PORT}`);
 
@@ -1074,3 +1236,21 @@ async function startServer() {
 }
 
 startServer();
+
+// Prevent server from crashing on unhandled errors (e.g. ConPTY AttachConsole on Windows)
+process.on('uncaughtException', (err) => {
+  // Ignore known ConPTY errors that occur when spawning PTY on Windows without a console
+  if (err.message && (
+    err.message.includes('AttachConsole') ||
+    err.message.includes('conpty') ||
+    err.message.includes('pty')
+  )) {
+    console.warn('⚠️ PTY warning (non-fatal):', err.message);
+    return;
+  }
+  console.error('❌ Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled rejection:', reason);
+});

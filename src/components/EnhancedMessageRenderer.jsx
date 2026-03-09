@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -22,8 +23,8 @@ const CodeBlock = ({ language, value, isDarkMode }) => {
   if (!detectedLanguage) {
     // More comprehensive detection based on content patterns
     const lowerValue = value.toLowerCase();
-    if (lowerValue.includes('<!doctype html') || lowerValue.includes('<html') || 
-        (lowerValue.includes('<script') && lowerValue.includes('</script>'))) {
+    if (lowerValue.includes('<!doctype html') || lowerValue.includes('<html') ||
+      (lowerValue.includes('<script') && lowerValue.includes('</script>'))) {
       detectedLanguage = 'html';
     } else if (lowerValue.includes('<style') || (lowerValue.includes('{') && lowerValue.includes('}'))) {
       // Check for CSS patterns
@@ -32,16 +33,16 @@ const CodeBlock = ({ language, value, isDarkMode }) => {
       } else if (value.includes('function ') || value.includes('const ') || value.includes('let ') || value.includes('var ')) {
         detectedLanguage = 'javascript';
       }
-    } else if (value.includes('function ') || value.includes('const ') || value.includes('let ') || 
-               value.includes('var ') || value.includes('=>') || value.includes('console.')) {
+    } else if (value.includes('function ') || value.includes('const ') || value.includes('let ') ||
+      value.includes('var ') || value.includes('=>') || value.includes('console.')) {
       detectedLanguage = 'javascript';
-    } else if (value.includes('def ') || value.includes('import ') || value.includes('from ') || 
-               value.includes('class ') || value.includes('print(')) {
+    } else if (value.includes('def ') || value.includes('import ') || value.includes('from ') ||
+      value.includes('class ') || value.includes('print(')) {
       detectedLanguage = 'python';
     } else if (value.includes('<?php')) {
       detectedLanguage = 'php';
-    } else if (lowerValue.includes('select ') || lowerValue.includes('from ') || 
-               lowerValue.includes('insert ') || lowerValue.includes('update ')) {
+    } else if (lowerValue.includes('select ') || lowerValue.includes('from ') ||
+      lowerValue.includes('insert ') || lowerValue.includes('update ')) {
       detectedLanguage = 'sql';
     } else if (value.trim().startsWith('{') && value.trim().endsWith('}')) {
       try {
@@ -114,28 +115,28 @@ const CodeBlock = ({ language, value, isDarkMode }) => {
 export const EnhancedMessageRenderer = ({ content, isDarkMode = true }) => {
   // Filter out error messages
   let processedContent = content?.replace(/^Error:\s*Loaded cached credentials\.?\s*\n?/gim, '');
-  
+
   // Pre-process to ensure code blocks are properly formatted
   if (processedContent) {
     // Handle fenced code blocks to ensure they stay as single blocks
     const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
     const codeBlocks = [];
     let tempContent = processedContent;
-    
+
     // Extract code blocks and replace with placeholders
     tempContent = tempContent.replace(codeBlockRegex, (match, lang, code) => {
       const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
       codeBlocks.push({ lang: lang || '', code: code.trim() });
       return placeholder;
     });
-    
+
     // Clean up spacing around placeholders
     tempContent = tempContent
       .replace(/\n{3,}/g, '\n\n')
       .replace(/(__CODE_BLOCK_\d+__)\n{2,}/g, '$1\n')
       .replace(/\n{2,}(__CODE_BLOCK_\d+__)/g, '\n$1')
       .trim();
-    
+
     // Restore code blocks with proper formatting
     codeBlocks.forEach((block, index) => {
       const placeholder = `__CODE_BLOCK_${index}__`;
@@ -144,14 +145,14 @@ export const EnhancedMessageRenderer = ({ content, isDarkMode = true }) => {
         `\n\n\`\`\`${block.lang}\n${block.code}\n\`\`\`\n\n`
       );
     });
-    
+
     processedContent = tempContent.trim();
   }
 
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert leading-relaxed">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           code: ({ node, className, children, ...props }) => {
             const isInline = !className && !String(children).includes('\n');
@@ -162,11 +163,11 @@ export const EnhancedMessageRenderer = ({ content, isDarkMode = true }) => {
                 </code>
               );
             }
-            
+
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
             const value = String(children).replace(/\n$/, '');
-            
+
             return (
               <CodeBlock
                 language={language}
@@ -195,9 +196,6 @@ export const EnhancedMessageRenderer = ({ content, isDarkMode = true }) => {
             </h3>
           ),
           p: ({ children }) => {
-            const text = children?.toString().trim();
-            if (!text || text === '') return null;
-            
             return (
               <p className="mb-2 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                 {children}
@@ -225,10 +223,10 @@ export const EnhancedMessageRenderer = ({ content, isDarkMode = true }) => {
             </blockquote>
           ),
           a: ({ href, children }) => (
-            <a 
-              href={href} 
+            <a
+              href={href}
               className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
-              target="_blank" 
+              target="_blank"
               rel="noopener noreferrer"
             >
               {children}

@@ -29,13 +29,19 @@ async function spawnGemini(command, options = {}, ws) {
     const args = [];
 
     // Add prompt flag with command if we have a command
+    const isWindows = process.platform === 'win32';
     if (command && command.trim()) {
       // If we have a sessionId, include conversation history
       if (sessionId) {
         const context = sessionManager.buildConversationContext(sessionId);
         if (context) {
           // Combine context with current command
-          const fullPrompt = context + command;
+          let fullPrompt = context + command;
+          // On Windows, newlines in CLI args cause cmd.exe to split the command.
+          // Collapse newlines to spaces so the prompt stays on one line.
+          if (isWindows) {
+            fullPrompt = fullPrompt.replace(/\r?\n/g, ' | ');
+          }
           args.push('--prompt', fullPrompt);
         } else {
           args.push('--prompt', command);
@@ -51,6 +57,20 @@ async function spawnGemini(command, options = {}, ws) {
     const cleanPath = (cwd || process.cwd()).replace(/[^\x20-\x7E]/g, '').trim();
     const workingDir = cleanPath;
     // Debug - workingDir
+
+    // Validate working directory exists before spawning
+    try {
+      await fs.access(workingDir);
+    } catch (error) {
+      const errorMsg = `Invalid working directory: ${workingDir} does not exist`;
+      console.error(errorMsg);
+      ws.send(JSON.stringify({
+        type: 'gemini-error',
+        error: errorMsg
+      }));
+      reject(new Error(errorMsg));
+      return;
+    }
 
     // Handle images by saving them to temporary files and passing paths to Gemini
     const tempImagePaths = [];
@@ -83,7 +103,7 @@ async function spawnGemini(command, options = {}, ws) {
         // Include the full image paths in the prompt for Gemini to reference
         // Gemini CLI can read images from file paths in the prompt
         if (tempImagePaths.length > 0 && command && command.trim()) {
-          const imageNote = `\n\n[画像を添付しました: ${tempImagePaths.length}枚の画像があります。以下のパスに保存されています:]\n${tempImagePaths.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+          const imageNote = `\n\n[Attached images: ${tempImagePaths.length} image(s) are available at the following paths:]\n${tempImagePaths.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
           const modifiedCommand = command + imageNote;
 
           // Update the command in args
@@ -179,7 +199,7 @@ async function spawnGemini(command, options = {}, ws) {
 
     // Add model for all sessions (both new and resumed)
     // Debug - Model from options and resume session
-    const modelToUse = options.model || 'gemini-2.5-flash';
+    const modelToUse = options.model || 'auto';
     // Debug - Using model
     args.push('--model', modelToUse);
 
@@ -195,16 +215,26 @@ async function spawnGemini(command, options = {}, ws) {
     // console.log('Spawning Gemini CLI with args:', args);
     // console.log('Working directory:', workingDir);
 
-    // Try to find gemini in PATH first, then fall back to environment variable
     const geminiPath = process.env.GEMINI_PATH || 'gemini';
     // console.log('Full command:', geminiPath, args.join(' '));
 
-    const isWindows = process.platform === 'win32';
-    const geminiProcess = spawn(geminiPath, args, {
+    // On Windows, .cmd files cannot be executed directly without a shell.
+    // Using shell:true causes cmd.exe /s to strip quotes from args with spaces,
+    // breaking the --prompt flag. Instead, spawn cmd.exe /c explicitly so
+    // Node.js handles quoting of individual args correctly via CreateProcess.
+    let spawnCmd, spawnArgs;
+    if (isWindows) {
+      spawnCmd = process.env.ComSpec || 'cmd.exe';
+      spawnArgs = ['/d', '/c', geminiPath, ...args];
+    } else {
+      spawnCmd = geminiPath;
+      spawnArgs = args;
+    }
+
+    const geminiProcess = spawn(spawnCmd, spawnArgs, {
       cwd: workingDir,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env }, // Inherit all environment variables
-      shell: isWindows // Required on Windows to run .cmd files
+      env: { ...process.env } // Inherit all environment variables
     });
 
     // Attach temp file info to process for cleanup later

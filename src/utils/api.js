@@ -1,15 +1,15 @@
 // Utility function for authenticated API calls
 export const authenticatedFetch = (url, options = {}) => {
   const token = localStorage.getItem('auth-token');
-  
+
   const defaultHeaders = {
     'Content-Type': 'application/json',
   };
-  
+
   if (token) {
     defaultHeaders['Authorization'] = `Bearer ${token}`;
   }
-  
+
   return fetch(url, {
     ...options,
     headers: {
@@ -37,11 +37,11 @@ export const api = {
     user: () => authenticatedFetch('/api/auth/user'),
     logout: () => authenticatedFetch('/api/auth/logout', { method: 'POST' }),
   },
-  
+
   // Protected endpoints
   config: () => authenticatedFetch('/api/config'),
   projects: () => authenticatedFetch('/api/projects'),
-  sessions: (projectName, limit = 5, offset = 0) => 
+  sessions: (projectName, limit = 5, offset = 0) =>
     authenticatedFetch(`/api/projects/${projectName}/sessions?limit=${limit}&offset=${offset}`),
   sessionMessages: (projectName, sessionId) =>
     authenticatedFetch(`/api/projects/${projectName}/sessions/${sessionId}/messages`),
@@ -71,6 +71,26 @@ export const api = {
     authenticatedFetch(`/api/projects/${projectName}/file`, {
       method: 'PUT',
       body: JSON.stringify({ filePath, content }),
+    }),
+  createFile: (projectName, filePath, content = '') =>
+    authenticatedFetch(`/api/projects/${projectName}/files/create`, {
+      method: 'POST',
+      body: JSON.stringify({ filePath, content }),
+    }),
+  createFolder: (projectName, folderPath) =>
+    authenticatedFetch(`/api/projects/${projectName}/folders/create`, {
+      method: 'POST',
+      body: JSON.stringify({ folderPath }),
+    }),
+  deleteFile: (projectName, filePath) =>
+    authenticatedFetch(`/api/projects/${projectName}/files`, {
+      method: 'DELETE',
+      body: JSON.stringify({ filePath }),
+    }),
+  deleteFolder: (projectName, folderPath) =>
+    authenticatedFetch(`/api/projects/${projectName}/folders`, {
+      method: 'DELETE',
+      body: JSON.stringify({ folderPath }),
     }),
   getFiles: (projectName) =>
     authenticatedFetch(`/api/projects/${projectName}/files`),

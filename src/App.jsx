@@ -18,13 +18,12 @@
  * Handles both existing sessions (with real IDs) and new sessions (with temporary IDs).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import MobileNav from './components/MobileNav';
 import ToolsSettings from './components/ToolsSettings';
-import QuickSettingsPanel from './components/QuickSettingsPanel';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import { useWebSocket } from './utils/websocket';
@@ -39,10 +38,10 @@ import { api } from './utils/api';
 function AppContent() {
   const navigate = useNavigate();
   const { sessionId } = useParams();
-  
+
   const { updateAvailable, latestVersion, currentVersion } = useVersionCheck('siteboon', 'claudecodeui');
   const [showVersionModal, setShowVersionModal] = useState(false);
-  
+
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -53,6 +52,9 @@ function AppContent() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [showToolsSettings, setShowToolsSettings] = useState(false);
   const [showQuickSettings, setShowQuickSettings] = useState(false);
+  const [filesPanelWidth, setFilesPanelWidth] = useState(320); // Default width 320px
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(320); // Default width 320px
   const [autoExpandTools, setAutoExpandTools] = useState(() => {
     const saved = localStorage.getItem('autoExpandTools');
     return saved !== null ? JSON.parse(saved) : false;
@@ -70,24 +72,62 @@ function AppContent() {
   // a message, the session is marked as "active" and project updates are paused
   // until the conversation completes or is aborted.
   const [activeSessions, setActiveSessions] = useState(new Set()); // Track sessions with active conversations
-  
+
   const { ws, sendMessage, messages } = useWebSocket();
+
+  // Drag to resize state for left sidebar
+  const isDraggingLeft = useRef(false);
+  const startXLeft = useRef(0);
+  const startWidthLeft = useRef(0);
+
+  const handleMouseDownLeft = (e) => {
+    if (isMobile) return; // Don't allow drag on mobile
+    isDraggingLeft.current = true;
+    startXLeft.current = e.clientX;
+    startWidthLeft.current = leftSidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    document.addEventListener('mousemove', handleMouseMoveLeft);
+    document.addEventListener('mouseup', handleMouseUpLeft);
+  };
+
+  const handleMouseMoveLeft = (e) => {
+    if (!isDraggingLeft.current) return;
+
+    const diffX = e.clientX - startXLeft.current;
+    let newWidth = startWidthLeft.current + diffX;
+
+    if (newWidth < 200) newWidth = 200;
+    if (newWidth > 800) newWidth = 800;
+
+    setLeftSidebarWidth(newWidth);
+  };
+
+  const handleMouseUpLeft = () => {
+    isDraggingLeft.current = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    document.removeEventListener('mousemove', handleMouseMoveLeft);
+    document.removeEventListener('mouseup', handleMouseUpLeft);
+  };
 
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     // Add debounce to prevent layout thrashing
     let resizeTimeout;
     const debouncedCheckMobile = () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(checkMobile, 150);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', debouncedCheckMobile);
-    
+
     return () => {
       window.removeEventListener('resize', debouncedCheckMobile);
       clearTimeout(resizeTimeout);
@@ -127,7 +167,7 @@ function AppContent() {
 
     // Check if the selected session's content has changed (modification vs addition)
     // Compare key fields that would affect the loaded chat interface
-    const sessionUnchanged = 
+    const sessionUnchanged =
       currentSelectedSession.id === updatedSelectedSession.id &&
       currentSelectedSession.title === updatedSelectedSession.title &&
       currentSelectedSession.created_at === updatedSelectedSession.created_at &&
@@ -142,42 +182,42 @@ function AppContent() {
   useEffect(() => {
     if (messages.length > 0) {
       const latestMessage = messages[messages.length - 1];
-      
+
       if (latestMessage.type === 'projects_updated') {
-        
+
         // Session Protection Logic: Allow additions but prevent changes during active conversations
         // This allows new sessions/projects to appear in sidebar while protecting active chat messages
         // We check for two types of active sessions:
         // 1. Existing sessions: selectedSession.id exists in activeSessions
         // 2. New sessions: temporary "new-session-*" identifiers in activeSessions (before real session ID is received)
         const hasActiveSession = (selectedSession && activeSessions.has(selectedSession.id)) ||
-                                 (activeSessions.size > 0 && Array.from(activeSessions).some(id => id.startsWith('new-session-')));
-        
+          (activeSessions.size > 0 && Array.from(activeSessions).some(id => id.startsWith('new-session-')));
+
         if (hasActiveSession) {
           // Allow updates but be selective: permit additions, prevent changes to existing items
           const updatedProjects = latestMessage.projects;
           const currentProjects = projects;
-          
+
           // Check if this is purely additive (new sessions/projects) vs modification of existing ones
           const isAdditiveUpdate = isUpdateAdditive(currentProjects, updatedProjects, selectedProject, selectedSession);
-          
+
           if (!isAdditiveUpdate) {
             // Skip updates that would modify existing selected session/project
             return;
           }
           // Continue with additive updates below
         }
-        
+
         // Update projects state with the new data from WebSocket
         const updatedProjects = latestMessage.projects;
         setProjects(updatedProjects);
-        
+
         // Update selected project if it exists in the updated projects
         if (selectedProject) {
           const updatedSelectedProject = updatedProjects.find(p => p.name === selectedProject.name);
           if (updatedSelectedProject) {
             setSelectedProject(updatedSelectedProject);
-            
+
             // Update selected session only if it was deleted - avoid unnecessary reloads
             if (selectedSession) {
               const updatedSelectedSession = updatedSelectedProject.sessions?.find(s => s.id === selectedSession.id);
@@ -198,19 +238,19 @@ function AppContent() {
       setIsLoadingProjects(true);
       const response = await api.projects();
       const data = await response.json();
-      
+
       // Optimize to preserve object references when data hasn't changed
       setProjects(prevProjects => {
         // If no previous projects, just set the new data
         if (prevProjects.length === 0) {
           return data;
         }
-        
+
         // Check if the projects data has actually changed
         const hasChanges = data.some((newProject, index) => {
           const prevProject = prevProjects[index];
           if (!prevProject) return true;
-          
+
           // Compare key properties that would affect UI
           return (
             newProject.name !== prevProject.name ||
@@ -220,11 +260,11 @@ function AppContent() {
             JSON.stringify(newProject.sessions) !== JSON.stringify(prevProject.sessions)
           );
         }) || data.length !== prevProjects.length;
-        
+
         // Only update if there are actual changes
         return hasChanges ? data : prevProjects;
       });
-      
+
       // Don't auto-select any project - user should choose manually
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -254,7 +294,7 @@ function AppContent() {
           return;
         }
       }
-      
+
       // If session not found, it might be a newly created session
       // Just navigate to it and it will be found when the sidebar refreshes
       // Don't redirect to home, let the session load naturally
@@ -299,9 +339,9 @@ function AppContent() {
       setSelectedSession(null);
       navigate('/');
     }
-    
+
     // Update projects state locally instead of full refresh
-    setProjects(prevProjects => 
+    setProjects(prevProjects =>
       prevProjects.map(project => ({
         ...project,
         sessions: project.sessions?.filter(session => session.id !== sessionId) || [],
@@ -320,14 +360,14 @@ function AppContent() {
     try {
       const response = await api.projects();
       const freshProjects = await response.json();
-      
+
       // Optimize to preserve object references and minimize re-renders
       setProjects(prevProjects => {
         // Check if projects data has actually changed
         const hasChanges = freshProjects.some((newProject, index) => {
           const prevProject = prevProjects[index];
           if (!prevProject) return true;
-          
+
           return (
             newProject.name !== prevProject.name ||
             newProject.displayName !== prevProject.displayName ||
@@ -336,10 +376,10 @@ function AppContent() {
             JSON.stringify(newProject.sessions) !== JSON.stringify(prevProject.sessions)
           );
         }) || freshProjects.length !== prevProjects.length;
-        
+
         return hasChanges ? freshProjects : prevProjects;
       });
-      
+
       // If we have a selected project, make sure it's still selected after refresh
       if (selectedProject) {
         const refreshedProject = freshProjects.find(p => p.name === selectedProject.name);
@@ -348,7 +388,7 @@ function AppContent() {
           if (JSON.stringify(refreshedProject) !== JSON.stringify(selectedProject)) {
             setSelectedProject(refreshedProject);
           }
-          
+
           // If we have a selected session, try to find it in the refreshed project
           if (selectedSession) {
             const refreshedSession = refreshedProject.sessions?.find(s => s.id === selectedSession.id);
@@ -370,15 +410,15 @@ function AppContent() {
       setSelectedSession(null);
       navigate('/');
     }
-    
+
     // Update projects state locally instead of full refresh
-    setProjects(prevProjects => 
+    setProjects(prevProjects =>
       prevProjects.filter(project => project.name !== projectName)
     );
   };
 
   // Session Protection Functions: Manage the lifecycle of active sessions
-  
+
   // markSessionAsActive: Called when user sends a message to mark session as protected
   // This includes both real session IDs and temporary "new-session-*" identifiers
   const markSessionAsActive = (sessionId) => {
@@ -424,11 +464,11 @@ function AppContent() {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
         {/* Backdrop */}
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm"
           onClick={() => setShowVersionModal(false)}
         />
-        
+
         {/* Modal */}
         <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-md mx-4 p-6 space-y-4">
           {/* Header */}
@@ -510,35 +550,68 @@ function AppContent() {
     <div className="fixed inset-0 flex bg-background">
       {/* Fixed Desktop Sidebar */}
       {!isMobile && (
-        <div className="w-80 flex-shrink-0 border-r border-border bg-card">
-          <div className="h-full overflow-hidden">
-            <Sidebar
-              projects={projects}
-              selectedProject={selectedProject}
-              selectedSession={selectedSession}
-              onProjectSelect={handleProjectSelect}
-              onSessionSelect={handleSessionSelect}
-              onNewSession={handleNewSession}
-              onSessionDelete={handleSessionDelete}
-              onProjectDelete={handleProjectDelete}
-              isLoading={isLoadingProjects}
-              onRefresh={handleSidebarRefresh}
-              onShowSettings={() => setShowToolsSettings(true)}
-              updateAvailable={updateAvailable}
-              latestVersion={latestVersion}
-              currentVersion={currentVersion}
-              onShowVersionModal={() => setShowVersionModal(true)}
-            />
+        <>
+          {showLeftSidebar && (
+            <div
+              className="flex-shrink-0 border-r border-border bg-card relative"
+              style={{ width: `${leftSidebarWidth}px`, transition: isDraggingLeft.current ? 'none' : 'width 300ms ease-out' }}
+            >
+              <div className="h-full overflow-hidden">
+                <Sidebar
+                  projects={projects}
+                  selectedProject={selectedProject}
+                  selectedSession={selectedSession}
+                  onProjectSelect={handleProjectSelect}
+                  onSessionSelect={handleSessionSelect}
+                  onNewSession={handleNewSession}
+                  onSessionDelete={handleSessionDelete}
+                  onProjectDelete={handleProjectDelete}
+                  isLoading={isLoadingProjects}
+                  onRefresh={handleSidebarRefresh}
+                  onShowSettings={() => setShowToolsSettings(true)}
+                  updateAvailable={updateAvailable}
+                  latestVersion={latestVersion}
+                  currentVersion={currentVersion}
+                  onShowVersionModal={() => setShowVersionModal(true)}
+                />
+              </div>
+
+              {/* Resizer Handle */}
+              <div
+                className="absolute top-0 bottom-0 right-0 w-1 sm:w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500 z-10 translate-x-1/2 transition-colors"
+                onMouseDown={handleMouseDownLeft}
+              />
+            </div>
+          )}
+
+          {/* Left Sidebar Toggle Button */}
+          <div
+            className={`fixed top-1/2 -translate-y-1/2 z-50 transition-all duration-300 ease-out`}
+            style={{ left: showLeftSidebar ? `${leftSidebarWidth}px` : '0px' }}
+          >
+            <button
+              onClick={() => setShowLeftSidebar(!showLeftSidebar)}
+              className="bg-white dark:bg-gray-800 border-r border-t border-b border-gray-200 dark:border-gray-700 rounded-r-md p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-lg group"
+              title={showLeftSidebar ? "Hide Projects" : "Show Projects"}
+            >
+              <svg
+                className={`w-5 h-5 text-gray-600 dark:text-gray-400 transition-transform duration-300 ${showLeftSidebar ? '' : 'rotate-180'}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
           </div>
-        </div>
+        </>
       )}
 
       {/* Mobile Sidebar Overlay */}
       {isMobile && (
-        <div className={`fixed inset-0 z-50 flex transition-all duration-150 ease-out ${
-          sidebarOpen ? 'opacity-100 visible' : 'opacity-0 invisible'
-        }`}>
-          <div 
+        <div className={`fixed inset-0 z-50 flex transition-all duration-150 ease-out ${sidebarOpen ? 'opacity-100 visible' : 'opacity-0 invisible'
+          }`}>
+          <div
             className="fixed inset-0 bg-background/80 backdrop-blur-sm transition-opacity duration-150 ease-out"
             onClick={(e) => {
               e.stopPropagation();
@@ -550,10 +623,9 @@ function AppContent() {
               setSidebarOpen(false);
             }}
           />
-          <div 
-            className={`relative w-[85vw] max-w-sm sm:w-80 bg-card border-r border-border h-full transform transition-transform duration-150 ease-out ${
-              sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-            }`}
+          <div
+            className={`relative w-[85vw] max-w-sm sm:w-80 bg-card border-r border-border h-full transform transition-transform duration-150 ease-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+              }`}
             onClick={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -600,6 +672,10 @@ function AppContent() {
           autoExpandTools={autoExpandTools}
           showRawParameters={showRawParameters}
           autoScrollToBottom={autoScrollToBottom}
+          showFilesPanel={activeTab === 'chat' && showQuickSettings}
+          setShowFilesPanel={setShowQuickSettings} // Reuse the existing toggle state for Files panel
+          filesPanelWidth={filesPanelWidth}
+          setFilesPanelWidth={setFilesPanelWidth}
         />
       </div>
 
@@ -611,34 +687,49 @@ function AppContent() {
           isInputFocused={isInputFocused}
         />
       )}
-      {/* Quick Settings Panel - Only show on chat tab */}
+
+      {/* Files Toggle Panel (Replaces Quick Settings) - Only show on chat tab */}
       {activeTab === 'chat' && (
-        <QuickSettingsPanel
-          isOpen={showQuickSettings}
-          onToggle={setShowQuickSettings}
-          autoExpandTools={autoExpandTools}
-          onAutoExpandChange={(value) => {
-            setAutoExpandTools(value);
-            localStorage.setItem('autoExpandTools', JSON.stringify(value));
-          }}
-          showRawParameters={showRawParameters}
-          onShowRawParametersChange={(value) => {
-            setShowRawParameters(value);
-            localStorage.setItem('showRawParameters', JSON.stringify(value));
-          }}
-          autoScrollToBottom={autoScrollToBottom}
-          onAutoScrollChange={(value) => {
-            setAutoScrollToBottom(value);
-            localStorage.setItem('autoScrollToBottom', JSON.stringify(value));
-          }}
-          isMobile={isMobile}
-        />
+        <div
+          className={`fixed ${isMobile ? 'bottom-44' : 'top-1/2 -translate-y-1/2'} z-50 transition-all duration-300 ease-out hidden sm:block`}
+          style={{ right: showQuickSettings ? `${filesPanelWidth}px` : '0px' }}
+        >
+          <button
+            onClick={() => setShowQuickSettings(!showQuickSettings)}
+            className="bg-white dark:bg-gray-800 border-l border-t border-b border-gray-200 dark:border-gray-700 rounded-l-md p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-lg"
+            title={showQuickSettings ? "Hide Files" : "Show Files"}
+          >
+            <svg
+              className={`w-5 h-5 text-gray-600 dark:text-gray-400 transition-transform duration-300 ${showQuickSettings ? '' : 'rotate-180'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       )}
 
       {/* Tools Settings Modal */}
       <ToolsSettings
         isOpen={showToolsSettings}
         onClose={() => setShowToolsSettings(false)}
+        autoExpandTools={autoExpandTools}
+        onAutoExpandChange={(value) => {
+          setAutoExpandTools(value);
+          localStorage.setItem('autoExpandTools', JSON.stringify(value));
+        }}
+        showRawParameters={showRawParameters}
+        onShowRawParametersChange={(value) => {
+          setShowRawParameters(value);
+          localStorage.setItem('showRawParameters', JSON.stringify(value));
+        }}
+        autoScrollToBottom={autoScrollToBottom}
+        onAutoScrollChange={(value) => {
+          setAutoScrollToBottom(value);
+          localStorage.setItem('autoScrollToBottom', JSON.stringify(value));
+        }}
       />
 
       {/* Version Upgrade Modal */}
