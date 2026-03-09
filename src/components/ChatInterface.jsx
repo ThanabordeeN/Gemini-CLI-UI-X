@@ -2223,7 +2223,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
         {/* Messages Area - Scrollable Middle Section */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-12 py-3 sm:py-4 space-y-3 sm:space-y-4 relative"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-10 py-3 sm:py-4 space-y-3 sm:space-y-4 relative"
           style={{
             scrollBehavior: 'smooth',
             // Force GPU acceleration for smoother scrolling
@@ -2249,7 +2249,7 @@ function ChatInterface({ selectedProject, selectedSession, ws, sendMessage, mess
             </div>
           ) : (
             <>
-              <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 pt-2">
+              <div className="max-w-4xl mx-auto w-full space-y-4 sm:space-y-6 pt-2">
                 {chatMessages.length > visibleMessageCount && (
                   <div className="text-center text-gray-500 dark:text-gray-400 text-sm py-2 border-b border-gray-200 dark:border-gray-700">
                     Showing last {visibleMessageCount} messages ({chatMessages.length} total) •
