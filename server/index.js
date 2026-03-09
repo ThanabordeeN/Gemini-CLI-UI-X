@@ -300,6 +300,43 @@ app.get('/api/browse-directories', authenticateToken, async (req, res) => {
   }
 });
 
+// Native folder picker endpoint (Windows only)
+app.get('/api/pick-directory', authenticateToken, async (req, res) => {
+  if (process.platform !== 'win32') {
+    return res.status(400).json({ error: 'Native folder picker is only supported on Windows' });
+  }
+
+  try {
+    // PowerShell command to open folder browser dialog
+    // We use Shell.Application for a more modern-looking dialog than the basic FolderBrowserDialog
+    const psCommand = `
+      $shell = New-Object -ComObject Shell.Application;
+      $folder = $shell.BrowseForFolder(0, 'Select Project Folder', 0, 0);
+      if ($folder) {
+        Write-Host $folder.Self.Path
+      }
+    `.replace(/\n/g, ' ').trim();
+
+    const { exec } = await import('child_process');
+    exec(`powershell.exe -Command "${psCommand}"`, (error, stdout, stderr) => {
+      if (error) {
+        console.error('PowerShell Error:', error);
+        return res.status(500).json({ error: 'Failed to open folder picker' });
+      }
+
+      const selectedPath = stdout.trim();
+      if (!selectedPath) {
+        // User cancelled
+        return res.json({ cancelled: true });
+      }
+
+      res.json({ path: selectedPath });
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create project endpoint
 app.post('/api/projects/create', authenticateToken, async (req, res) => {
   try {
